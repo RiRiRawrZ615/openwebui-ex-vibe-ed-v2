@@ -1,5 +1,13 @@
 import { encode } from 'html-entities';
 
+// Set by the renderer from the resolved ex settings. A plain module variable so this file stays a
+// pure formatter with no store dependency.
+export let thinkingDisplayMode = 'collapsed';
+
+export function setThinkingDisplayMode(mode: string): void {
+	thinkingDisplayMode = mode === 'list' || mode === 'expand' ? mode : 'collapsed';
+}
+
 export type OutputContentPart = {
 	type?: string;
 	text?: unknown;
@@ -66,6 +74,13 @@ export type OutputDisplayItem =
 			tokens: OutputDetailToken[];
 	  }
 	| {
+			// Thinking, rendered inline in the message flow rather than inside the
+			// collapsed activity card, so reasoning stays readable next to the answer.
+			type: 'reasoning';
+			id: string;
+			token: OutputDetailToken;
+	  }
+	| {
 			type: 'file';
 			id: string;
 			item: Record<string, unknown>;
@@ -94,8 +109,13 @@ type ResponseStreamEvent = {
 	[key: string]: unknown;
 };
 
+// Tool and action types that belong in the collapsed activity card.
+//
+// 'reasoning' is deliberately NOT here. Thinking is part of how the answer reads: the user
+// wants thinking, then the response, then thinking again, with only the tool calls kept in a
+// separate collapsed surface. Grouping reasoning with tool calls buried the model's actual
+// reasoning inside the thing it was reasoning about, which is the opposite of useful.
 const GROUPABLE_OUTPUT_TYPES = new Set([
-	'reasoning',
 	'function_call',
 	'open_webui:code_interpreter',
 	'web_search_call',
@@ -361,6 +381,23 @@ export function buildOutputDisplayItems(output: OutputItem[] = []): OutputDispla
 	const toolOutputByCallId: Record<string, OutputItem> = {};
 	const toolCallByCallId: Record<string, OutputItem> = {};
 
+	// Tool activity is hoisted out of the message flow and emitted once at the end.
+	//
+	// This is the real render path for a chat response (ResponseMessage -> ContentRenderer ->
+	// StructuredOutputRenderer), so changing the markdown token path does not affect it.
+	//
+	// Previously each block of detail tokens was flushed inline, at the position where it
+	// happened. An agentic turn alternates prose and calls, so the message read as
+	// paragraph, call row, paragraph, call row, each row carrying its own full-width
+	// Input/Output panel. The result was that the answer was buried under the transcript of
+	// producing it.
+	//
+	// Now every detail token is collected into one list and emitted as a single
+	// detail_group after all message text. The body stays readable prose; the whole turn's
+	// activity is one collapsible block at the bottom, in original order, and each call is
+	// still individually inspectable inside it.
+	const hoistedDetailTokens: OutputDetailToken[] = [];
+
 	for (const item of output) {
 		if (item?.type === 'function_call_output' && item.call_id) {
 			toolOutputByCallId[item.call_id] = item;
@@ -369,22 +406,11 @@ export function buildOutputDisplayItems(output: OutputItem[] = []): OutputDispla
 		}
 	}
 
-	const flushDetails = () => {
-		if (currentDetailTokens.length > 1) {
-			displayItems.push({
-				type: 'detail_group',
-				id: `detail-group-${displayItems.length}`,
-				tokens: [...currentDetailTokens]
-			});
-		} else if (currentDetailTokens.length === 1) {
-			displayItems.push({
-				type: 'detail_single',
-				id: `detail-${displayItems.length}`,
-				token: currentDetailTokens[0]
-			});
-		}
-		currentDetailTokens.length = 0;
-	};
+	// Kept as a named no-op so the call sites below stay readable and the inline-flush
+	// behaviour is trivially restorable. Nothing is emitted here any more: detail tokens
+	// are appended to hoistedDetailTokens and emitted once, after the whole output has been
+	// walked, by the single flush at the end of this function.
+	const flushDetails = () => {};
 
 	output.forEach((item, index) => {
 		if (!item) {
@@ -415,7 +441,33 @@ export function buildOutputDisplayItems(output: OutputItem[] = []): OutputDispla
 		if (item.type && GROUPABLE_OUTPUT_TYPES.has(item.type)) {
 			const token = buildDetailToken(item, index === output.length - 1, toolOutputByCallId);
 			if (token) {
-				currentDetailTokens.push(token);
+				hoistedDetailTokens.push(token);
+			}
+			return;
+		}
+
+		// Reasoning is kept in the message flow rather than in the activity card, so the
+		// transcript reads thinking, response, thinking, while the tool calls sit apart.
+		// It renders through the existing Collapsible, collapsed by default, which is what
+		// produces the familiar 'Thought for N seconds' line.
+		if (item.type === 'reasoning') {
+			if (getReasoningText(item).trim()) {
+				const token = buildReasoningToken(item, index === output.length - 1);
+				// Three presentations of the same group. The grouping already existed; what was missing
+				// was control over it, so a long agentic turn produced one collapsible per reasoning
+				// block and the chat became a wall of thinking headers.
+				if (thinkingDisplayMode === 'list') {
+					token.text = String(token.text ?? '')
+						.split('\n\n')
+						.map((block) => block.split('\n')[0].slice(0, 220))
+						.join('\n');
+				}
+				(token as OutputDetailToken & { open?: boolean }).open = thinkingDisplayMode === 'expand';
+				displayItems.push({
+					type: 'reasoning',
+					id: item.id ?? `reasoning-${index}`,
+					token
+				});
 			}
 			return;
 		}
@@ -468,9 +520,16 @@ export function buildOutputDisplayItems(output: OutputItem[] = []): OutputDispla
 		}
 	});
 
-	flushDetails();
-
-	// Providers can reuse item ids across tool-call rounds.
+	// The single flush for the whole turn. Everything the turn did is one block, appended
+	// after the last piece of message text.
+	if (hoistedDetailTokens.length > 0) {
+		displayItems.push({
+			type: 'detail_group',
+			id: `detail-group-${displayItems.length}`,
+			tokens: hoistedDetailTokens
+		});
+	}
+	currentDetailTokens.length = 0;
 	const seenIds = new Set<string>();
 	displayItems.forEach((displayItem, index) => {
 		if (seenIds.has(displayItem.id)) {
@@ -486,6 +545,21 @@ export function getOutputText(output?: OutputItem[] | null): string {
 	return (output ?? [])
 		.filter((item) => item?.type === 'message')
 		.map(getMessageText)
+		.filter((text) => text.trim())
+		.join('\n');
+}
+
+/**
+ * Streaming text used for measurement only, never for rendering.
+ *
+ * getOutputText filters to type 'message', so a turn that is still thinking contributes nothing.
+ * The arrival sampler and the live token estimate both read this, which is why the live row could
+ * show a token count of zero while a thinking block was visibly growing on screen.
+ */
+export function getReasonedText(output?: OutputItem[] | null): string {
+	return (output ?? [])
+		.filter((item) => item?.type === 'reasoning')
+		.map(getReasoningText)
 		.filter((text) => text.trim())
 		.join('\n');
 }

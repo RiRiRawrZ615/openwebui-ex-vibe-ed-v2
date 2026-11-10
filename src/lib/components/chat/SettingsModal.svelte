@@ -26,6 +26,11 @@
 	import Usage from './Settings/Usage.svelte';
 	import ArchivedChats from './Settings/ArchivedChats.svelte';
 	import Personalization from './Settings/Personalization.svelte';
+	import OpenWebVibes from './Settings/OpenWebVibes.svelte';
+	import Help from './Settings/Help.svelte';
+	import SetupTab from './Settings/SetupTab.svelte';
+	import ThemesTab from './Settings/ThemesTab.svelte';
+	import ExSlotHost from '../ex/ExSlotHost.svelte';
 	import Search from '../icons/Search.svelte';
 	import Connections from './Settings/Connections.svelte';
 	import Integrations from './Settings/Integrations.svelte';
@@ -35,8 +40,11 @@
 	import UserCircle from '../icons/UserCircle.svelte';
 	import SoundHigh from '../icons/SoundHigh.svelte';
 	import InfoCircle from '../icons/InfoCircle.svelte';
+	import QuestionMarkCircle from '../icons/QuestionMarkCircle.svelte';
 	import WrenchAlt from '../icons/WrenchAlt.svelte';
 	import Face from '../icons/Face.svelte';
+	import Sparkles from '../icons/Sparkles.svelte';
+	import Wrench from '../icons/Wrench.svelte';
 	import AppNotification from '../icons/AppNotification.svelte';
 	import AdjustmentsHorizontal from '../icons/AdjustmentsHorizontal.svelte';
 	import ArchiveBox from '../icons/ArchiveBox.svelte';
@@ -150,6 +158,10 @@
 		connections: $i18n.t('Services'),
 		tools: $i18n.t('Services'),
 		personalization: $i18n.t('Preferences'),
+		vibes: $i18n.t('Fork'),
+		help: $i18n.t('Fork'),
+		setup: $i18n.t('Fork'),
+		themes: $i18n.t('Fork'),
 		audio: $i18n.t('Preferences'),
 		data_controls: $i18n.t('Data'),
 		usage: $i18n.t('Data'),
@@ -230,6 +242,32 @@
 			titleKey: 'settings.personal.personalization.title',
 			title: $i18n.t('settings.personal.personalization.title'),
 			searchPrefixes: ['settings.personal.personalization.']
+		},
+		{
+			id: 'vibes',
+			titleKey: 'settings.personal.vibes.title',
+			title: $i18n.t('settings.personal.vibes.title'),
+			searchPrefixes: ['settings.personal.vibes.']
+		},
+		{
+			id: 'help',
+			titleKey: 'settings.personal.help.title',
+			title: $i18n.t('settings.personal.help.title'),
+			// The help content is written in the component, not in the locale, so the settings search
+			// cannot index its questions. The tab is reachable by searching for its title.
+			searchPrefixes: []
+		},
+		{
+			id: 'setup',
+			titleKey: 'settings.personal.setup.title',
+			title: $i18n.t('settings.personal.setup.title'),
+			searchPrefixes: ['settings.personal.vibes.sections.install', 'settings.personal.vibes.sections.import', 'settings.personal.vibes.setup']
+		},
+		{
+			id: 'themes',
+			titleKey: 'settings.personal.themes.title',
+			title: $i18n.t('settings.personal.themes.title'),
+			searchPrefixes: ['settings.personal.vibes.sections.theme', 'settings.personal.vibes.theme']
 		},
 		{
 			id: 'audio',
@@ -392,9 +430,12 @@
 
 	const getAvailableSettings = (personalTabs: SettingsTab[], administratorTabs: SettingsTab[]) => {
 		const personalSettings = personalTabs.filter((tab) => {
-			if (tab.id === 'connections') {
-				return $config?.features?.enable_direct_connections;
-			}
+			// Connections are NOT hidden. An earlier revision of this fork suppressed them on the
+			// reasoning that local engines do not need outbound providers, which was wrong: a user
+			// can point this instance at a hosted aggregator, and with the tab hidden they cannot
+			// see or fix a provider their own token is spending against. Visibility is not the
+			// same as permission, and hiding a working feature to steer behaviour is not this
+			// fork's call to make.
 
 			if (tab.id === 'tools') {
 				return (
@@ -431,10 +472,21 @@
 			return true;
 		});
 
+		// This fork runs local engines. Surfaces that only make sense against a hosted account are
+		// removed rather than merely disabled, so nobody goes looking for a feature that cannot
+		// work here: the evaluation arena and its Elo leaderboard.
+		//
+		// Two tabs were named Connections. The personal one lists only the user's own direct
+		// connections, which for this instance is the single tokenharbor entry, while the admin one
+		// lists the whole stored connection list. Same thing at two scopes reads as a duplicate, so
+		// the narrow tab is removed and the full one is kept.
+		const forkHiddenTabs = new Set(['admin:evaluations', 'connections']);
+
 		return (
 			$user?.role === 'admin' ? [...personalSettings, ...administratorTabs] : personalSettings
 		).filter(
 			(tab) =>
+				!forkHiddenTabs.has(tab.id) &&
 				(tab.id !== 'admin:analytics' || ($config?.features?.enable_admin_analytics ?? true)) &&
 				(tab.id !== 'admin:apps' || $config?.features?.enable_apps)
 		);
@@ -718,6 +770,58 @@
 								<Face className="size-3.5" strokeWidth="2" />
 								<span>{$i18n.t('settings.personal.personalization.title')}</span>
 							</button>
+						{:else if tabId === 'vibes'}
+							<button
+								role="tab"
+								aria-controls="tab-vibes"
+								aria-selected={selectedTab === 'vibes'}
+								class={tabButtonClass(selectedTab === 'vibes')}
+								on:click={() => {
+									selectTab('vibes');
+								}}
+							>
+								<Sparkles className="size-3.5" strokeWidth="2" />
+								<span>{$i18n.t('settings.personal.vibes.title')}</span>
+							</button>
+						{:else if tabId === 'help'}
+							<button
+								role="tab"
+								aria-controls="tab-help"
+								aria-selected={selectedTab === 'help'}
+								class={tabButtonClass(selectedTab === 'help')}
+								on:click={() => {
+									selectTab('help');
+								}}
+								>
+								<QuestionMarkCircle className="size-3.5" strokeWidth="2" />
+								<span>{$i18n.t('settings.personal.help.title')}</span>
+							</button>
+						{:else if tabId === 'setup'}
+							<button
+								role="tab"
+								aria-controls="tab-setup"
+								aria-selected={selectedTab === 'setup'}
+								class={tabButtonClass(selectedTab === 'setup')}
+								on:click={() => {
+									selectTab('setup');
+								}}
+							>
+								<Wrench className="size-3.5" strokeWidth="2" />
+								<span>{$i18n.t('settings.personal.setup.title')}</span>
+							</button>
+						{:else if tabId === 'themes'}
+							<button
+								role="tab"
+								aria-controls="tab-themes"
+								aria-selected={selectedTab === 'themes'}
+								class={tabButtonClass(selectedTab === 'themes')}
+								on:click={() => {
+									selectTab('themes');
+								}}
+							>
+								<AdjustmentsHorizontal className="size-3.5" strokeWidth="2" />
+								<span>{$i18n.t('settings.personal.themes.title')}</span>
+							</button>
 						{:else if tabId === 'audio'}
 							<button
 								role="tab"
@@ -845,8 +949,12 @@
 	</nav>
 
 	<div class="flex-1 min-w-0 min-h-0 p-4 md:px-5 flex flex-col">
+		<!-- A panel that clips its content is what made the ex tabs look broken. The scrollbar rule
+			styles a thumb; it does not create a scroll container, so a tab with no inner scroller of
+			its own had nothing to grab. The panel is the container now. Tabs that already scroll
+			inside keep their own scroller. -->
 		<div
-			class="flex-1 min-h-0 overflow-hidden"
+			class="flex-1 min-h-0 overflow-y-auto owv-scroll"
 			id={isAdminTab(selectedTab) ? adminTabPanelId(selectedTab) : undefined}
 		>
 			{#if selectedTab === 'general'}
@@ -890,6 +998,22 @@
 						toast.success($i18n.t('Settings saved successfully!'));
 					}}
 				/>
+			{:else if selectedTab === 'vibes'}
+				<!-- settings_tab is a pluggable slot. The builtin is OpenWebVibes, so a plugin can
+				     replace this tab, and a disabled plugin falls back to the builtin here. Core slots
+				     cannot be replaced, so the modal itself is not routed through the host. -->
+				<ExSlotHost
+					slot="settings_tab"
+					Builtin={OpenWebVibes}
+					{saveSettings}
+					onSave={() => toast.success($i18n.t('Settings saved successfully!'))}
+				/>
+			{:else if selectedTab === 'help'}
+				<Help />
+			{:else if selectedTab === 'setup'}
+				<SetupTab {saveSettings} on:save={() => toast.success($i18n.t('Settings saved successfully!'))} />
+			{:else if selectedTab === 'themes'}
+				<ThemesTab {saveSettings} on:save={() => toast.success($i18n.t('Settings saved successfully!'))} />
 			{:else if selectedTab === 'audio'}
 				<Audio
 					{saveSettings}

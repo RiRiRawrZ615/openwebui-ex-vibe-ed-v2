@@ -87,33 +87,53 @@
 		return token?.type === 'details' && GROUPABLE_DETAIL_TYPES.has(token?.attributes?.type ?? '');
 	};
 
+	// A run of tool calls is only broken by content that genuinely separates it: another
+	// details block that is NOT groupable (a summary the user must read on its own), or the
+	// end of the message. Short prose in between does not break the run.
+	//
+	// This matters because a turn interleaves narration with tool calls: "let me check X",
+	// a call, "now Y", a call. Treating that prose as a run terminator produced a stack of
+	// single-call rows, each with its own full-width Input/Output panel, which is the spam
+	// this is here to fix. The prose is absorbed into the group and still rendered in order
+	// inside the expanded panel; only the summary line sits at the top level.
+	const ABSORBABLE_INTO_RUN = new Set(['paragraph', 'text', 'space', 'inline', 'escape']);
+
+	const isAbsorbableIntoRun = (token: Token) => {
+		if (ABSORBABLE_INTO_RUN.has(token?.type ?? '')) {
+			// Whitespace-only paragraphs would otherwise keep a run alive across a real break.
+			if (token?.type === 'space') return false;
+			if (token?.type === 'paragraph' && !(token?.text ?? '').trim()) return false;
+			return true;
+		}
+		return false;
+	};
+
 	const getDisplayTokens = (tokenList: Token[] = []) => {
 		const displayTokens = [];
-		let detailGroup = [];
 
-		const flushDetailGroup = () => {
-			if (detailGroup.length > 1) {
-				displayTokens.push({
-					type: 'detail_group',
-					items: [...detailGroup]
-				});
-			} else if (detailGroup.length === 1) {
-				displayTokens.push(detailGroup[0]);
-			}
-
-			detailGroup = [];
-		};
+		// Every tool call in the message collects here instead of being drawn inline.
+		//
+		// Tool calls used to be rendered wherever they occurred in the token stream, so an
+		// agentic turn looked like prose, a call row, prose, a call row, all the way down.
+		// Each row carried its own full-width Input/Output panel, which made a normal turn
+		// read as a wall of command spam interleaved with the actual answer.
+		//
+		// Now the calls are pulled out of the flow entirely and emitted once at the end as a
+		// single collapsible block. The message body stays pure prose, which is what the user
+		// reads, and the whole turn's activity is one click away in order.
+		const activity: Token[] = [];
 
 		for (const token of tokenList) {
 			if (isGroupableDetailToken(token)) {
-				detailGroup.push(token);
+				activity.push(token);
 			} else {
-				flushDetailGroup();
 				displayTokens.push(token);
 			}
 		}
 
-		flushDetailGroup();
+		if (activity.length > 0) {
+			displayTokens.push({ type: 'detail_group', items: activity, absorbed: [] });
+		}
 
 		return displayTokens;
 	};
@@ -472,6 +492,7 @@
 		<ConsecutiveDetailsGroup
 			id={`${id}-${tokenIdx}-detail-group`}
 			tokens={token.items}
+			absorbed={token.absorbed ?? []}
 			messageDone={done}
 			{compactPreview}
 			{allowEmbeds}

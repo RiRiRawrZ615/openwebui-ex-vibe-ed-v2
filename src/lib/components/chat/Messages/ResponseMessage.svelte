@@ -65,6 +65,16 @@
 	import ContentRenderer from './ContentRenderer.svelte';
 	import ContextCompactionLabel from './ContextCompactionLabel.svelte';
 	import { KokoroWorker } from '$lib/workers/KokoroWorker';
+	import { estimateMessagesTokens } from '$lib/utils/contextUsage';
+	import { resolveExSettings } from '$lib/utils/exSettings';
+	import { ArrivalRate, formatStatsLine, generationStats, liveStats, windowFill, type RolloverState } from '$lib/utils/exStats';
+	import { getExRollover } from '$lib/apis/ex';
+	import { engineChips, engineStatus } from '$lib/utils/engineStatus';
+	// estimateTokens lives in contextUsage.ts, not exStats.ts. It was called at the arrival
+	// sampler without being imported, which threw a ReferenceError on every streaming render
+	// and took the whole message component, and therefore the turn, down with it.
+	import { estimateTokens } from '$lib/utils/contextUsage';
+	import StatsRow from './StatsRow.svelte';
 	import FileItem from '$lib/components/common/FileItem.svelte';
 	import FollowUps from './ResponseMessage/FollowUps.svelte';
 	import { fade } from 'svelte/transition';
@@ -74,7 +84,7 @@
 	import FullHeightIframe from '$lib/components/common/FullHeightIframe.svelte';
 	import MCPApp from '$lib/components/chat/Messages/MCPApp.svelte';
 	import OutputEditView from './OutputEditView.svelte';
-	import { getOutputText, replaceOutputMessageText, type OutputItem } from './structuredOutput';
+	import { getOutputText, getReasonedText, replaceOutputMessageText, type OutputItem } from './structuredOutput';
 
 	interface MessageType {
 		user_id?: string;
@@ -127,6 +137,9 @@
 			load_duration?: number;
 			usage?: unknown;
 		};
+		// Declared so the EX stats row can read it without an implicit any. The
+		// template already reads message.usage; the interface just never said so.
+		usage?: Record<string, unknown>;
 		annotation?: { type: string; rating: number };
 	}
 
@@ -209,10 +222,90 @@
 		getOutputText(message.output) || removeAllDetails(message.content ?? '');
 	$: hasResponseContent = Boolean((message.content ?? '').trim() || message.output?.length);
 
+	// EX live stats. Content changes drive this, so tok/s reflects the actual arrival
+	// rate during generation rather than a guess. Providers usually report usage only in
+	// the final chunk, so everything shown before that is labelled as an estimate and is
+	// never merged into message.usage.
+	//
+	// Measured by arrival, not by elapsed-since-start. The earlier version divided the whole
+	// message by wall time, so a long agentic turn collapsed into one blended figure that
+	// described the turn instead of the reply. One sampler per message, because a
+	// multi-response turn has several streaming at once and a shared buffer would blend their
+	// rates into a number describing neither.
+	// Reactive so a settings change in the EX tab applies without a reload.
+	$: exSettings = resolveExSettings($settings);
+	const exArrival = new ArrivalRate();
+	let liveStartMs: number | null = null;
+	let liveElapsedSec = 0;
+	let liveRate = 0;
+
+	// Measured tokens, which is not the same as rendered tokens. A turn that is still thinking has
+	// no message text yet, so measuring only visibleResponseContent gave the sampler nothing to
+	// divide: the row showed a token count, the window, and no rate, because the rate had no signal.
+	// Rendering still uses visibleResponseContent, so thinking blocks are not moved into the reply.
+
+	// Engine figures come from the log the launcher writes, through the route, at a slow cadence (the
+	// util caches with a minimum interval). They are rendered as their own chips because they are not
+	// the same measurement as the arrival rate above.
+	let engineValue = null;
+	$: if (message && message.role === 'assistant' && exSettings.engineStatus) {
+		engineValue = engineStatus(exSettings, localStorage.token);
+	}
+	$: exEngineChips = engineChips(engineValue, exSettings);
+	$: liveTokenCount =
+		estimateTokens(visibleResponseContent) + estimateTokens(getReasonedText(message?.output));
+
+	$: if (message && message.role === 'assistant' && !message.done && exSettings.liveStats) {
+		if (liveStartMs === null) {
+			liveStartMs = message.timestamp ?? Date.now();
+			exArrival.reset();
+		}
+		liveElapsedSec = Math.max(0, (Date.now() - liveStartMs) / 1000);
+		// Feeds the trailing window. Called on every content change, which is what makes the
+		// figure instantaneous rather than a lifetime average.
+		liveRate = exArrival.record(liveTokenCount);
+	}
+	$: if (message?.done) {
+		liveStartMs = null;
+		liveElapsedSec = 0;
+	}
+
+	// Message-list estimate only. System prompt and tool schemas are not counted here,
+	// so the row labels the window as message-only.
+	$: exWindowTokens = message ? estimateMessagesTokens(createMessagesList(history, message.id)) : 0;
+
+	// The window fill, from the engine's request size, falling back to the message estimate only when
+	// nothing else is known. Held across the chat so it grows rather than resetting each turn.
+	$: exWindowInfo = windowFill(
+		engineValue?.status,
+		engineValue?.ceiling?.value ?? null,
+		engineValue?.last_prefill ?? null,
+		exWindowTokens
+	);
+
+	// Context rollover state for this chat, read once per chat. The number is the count of sheds the
+	// gate actually performed, taken from the state file it writes when a shed happens, so it is not an
+	// estimate. A shed during this turn shows on the next read rather than in the row that caused it,
+	// which is the honest order: the row reports the state as it stood when the turn began.
+	let exRollover: RolloverState | null = null;
+	let exRollKey = '';
+	$: if (chatId && chatId !== exRollKey) {
+		exRollKey = chatId;
+		getExRollover(chatId, localStorage.token)
+			.then((r) => (exRollover = r?.state ?? null))
+			.catch(() => {});
+	}
+	$: exLive =
+		exSettings.liveStats && message?.role === 'assistant' && !message.done
+			? liveStats(visibleResponseContent, liveElapsedSec, exWindowTokens, liveRate, liveTokenCount)
+			: null;
+	$: exStats = message?.usage ? generationStats(message.usage) : null;
+
 	let edit = false;
 	let editedContent = '';
 	let editedOutput: any[] | null = null;
 	let editTextAreaElement: HTMLTextAreaElement;
+
 
 	let messageIndexEdit = false;
 
@@ -935,13 +1028,12 @@
 								<ContextCompactionLabel status={compactionStatus} {compactPreview} />
 							{/if}
 
-							{#if !compactionStatus && !message.done && !message.error && (hasResponseContent || !hasVisibleStatus)}
-								<div class="text-[0.9375rem] leading-relaxed">
-									<span
-										class="inline-block w-[0.125rem] h-3.5 bg-gray-400 dark:bg-gray-500 ml-0.5 animate-cursor-pulse align-text-bottom"
-									></span>
-								</div>
-							{/if}
+							<!-- The pulsing caret that upstream draws while generating was removed here.
+							     It was a 2px blinking bar appended after the text, added by the
+							     animate-cursor-pulse utility. It reads as a stray cursor sitting in the prose,
+							     and with chunked backends the text already stops and starts on its own, so the
+							     blink draws attention to the gaps instead of the words. The streaming state is
+							     still communicated by the message not being marked done. -->
 
 							{#if message?.error}
 								<Error content={message?.error?.content ?? message.content} />
@@ -959,6 +1051,14 @@
 
 							{#if message.code_executions}
 								<CodeExecutions codeExecutions={message.code_executions} />
+							{/if}
+
+							<!-- Stats belong under the answer, not above it. Above, the row pushed the text
+							     down a line and read as a header for the reply instead of a note about it. -->
+							{#if exLive && hasResponseContent}
+								<StatsRow stats={exLive.stats} approximate={true} windowTokens={exWindowTokens} windowInfo={exWindowInfo} engineChips={exEngineChips} tokenSource={exSettings.statsTokenSource} />
+							{:else if exStats && message.done && !message.error}
+								<StatsRow stats={exStats} approximate={false} engineChips={exEngineChips} tokenSource={exSettings.statsTokenSource} />
 							{/if}
 						</div>
 					</div>
@@ -1212,7 +1312,7 @@
 									</Tooltip>
 								{/if}
 
-								{#if Object.keys(message.usage ?? {}).some((key) => key !== 'incomplete') && $visibleControls['chat.usage']}
+								{#if Object.keys(message.usage ?? {}).some((key) => key !== 'incomplete') && $visibleControls['chat.usage'] && exSettings.showInfoIcon}
 									{@const usage = JSON.stringify(message.usage, null, 2)
 										.replace(/"([^(")"]+)":/g, '$1:')
 										.slice(1, -1)
@@ -1220,9 +1320,10 @@
 										.map((line) => line.slice(2))
 										.map((line) => (line.endsWith(',') ? line.slice(0, -1) : line))
 										.join('\n')}
-									<span id="usage-{message.id}" hidden>{usage}</span>
+									{@const exInfo = (exStats ? `${formatStatsLine(exStats)}\n\n` : '') + usage}
+									<span id="usage-{message.id}" hidden>{exInfo}</span>
 									<Tooltip
-										content={`<pre>${sanitizeResponseContent(usage)}</pre>`}
+										content={`<pre>${sanitizeResponseContent(exInfo)}</pre>`}
 										allowHTML={true}
 										placement="bottom"
 									>
