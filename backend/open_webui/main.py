@@ -185,6 +185,7 @@ from open_webui.routers import (
     users,
     utils,
 )
+from open_webui.routers import ex
 from open_webui.routers.retrieval import (
     get_ef,
     get_embedding_function,
@@ -826,6 +827,8 @@ app.include_router(audio.router, prefix='/api/v1/audio', tags=['audio'])
 app.include_router(retrieval.router, prefix='/api/v1/retrieval', tags=['retrieval'])
 
 app.include_router(configs.router, prefix='/api/v1/configs', tags=['configs'])
+
+app.include_router(ex.router, prefix='/api/v1/ex', tags=['ex'])
 
 app.include_router(auths.router, prefix='/api/v1/auths', tags=['auths'])
 app.include_router(mfa.router, prefix='/api/v1/auths/mfa', tags=['auths'])
