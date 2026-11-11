@@ -46,7 +46,7 @@
 #   owv-kill.sh --sudo           escalate for in-scope pids owned by root (s6/systemd services)
 #
 # Environment
-#   OWV_LAUNCHER_DIR   where these scripts live
+#   OWV_V2_LAUNCHER_DIR  where these scripts live (v2-scoped, not shared with v1)
 #   OWV_WEBUI_PORT     production web UI port (8080)
 #   OWV_DEV_WEBUI_PORT dev web UI port (8090)
 #   OWV_RUNTIME_DIR    production runtime dir
@@ -55,18 +55,20 @@
 
 set -uo pipefail
 
-LAUNCHER_DIR="${OWV_LAUNCHER_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+# Bound to this file, not to a shared variable. Resolving the launcher dir from a name that
+# v1 also owns is how a v2 kill ends up taking down the v1 instance on a co-installed machine.
+LAUNCHER_DIR="${OWV_V2_LAUNCHER_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 
 # --- scope resolution ---------------------------------------------------------------------
 PROD_RUNTIME_DIR="${OWV_RUNTIME_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/openwebvibes-v2}"
-PROD_CODE_DIR="${OWV_CODE_DIR:-$HOME/Documents/AI_Output/Forks/vibe-ed}"
-PROD_WEBUI_PORT="${OWV_WEBUI_PORT:-8080}"
+PROD_CODE_DIR="${OWV_V2_CODE_DIR:-$HOME/Documents/AI_Output/Forks/vibe-ed-v2/base}"
+PROD_WEBUI_PORT="${OWV_V2_WEBUI_PORT:-8085}"
 PROD_ENGINE_PORT="${OWV_API_PORT:-8004}"
 PROD_TERMINAL_PORT="${OWV_TERMINAL_PORT:-8003}"
 
 DEV_RUNTIME_DIR="${OWV_DEV_RUNTIME_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/openwebvibes-v2-dev}"
-DEV_CODE_DIR="${OWV_DEV_CODE_DIR:-$HOME/Documents/AI_Output/Dev/vibe-ed-dev}"
-DEV_WEBUI_PORT="${OWV_DEV_WEBUI_PORT:-8090}"
+DEV_CODE_DIR="${OWV_V2_DEV_CODE_DIR:-$HOME/Documents/AI_Output/Dev/vibe-ed-v2}"
+DEV_WEBUI_PORT="${OWV_V2_DEV_WEBUI_PORT:-8095}"
 DEV_ENGINE_PORT="${OWV_DEV_API_PORT:-8005}"
 DEV_VISION_PORT="${OWV_DEV_VISION_PORT:-8006}"
 
@@ -279,9 +281,9 @@ listener_pids() {
 kill_scope() {
     local scope="$1" runtime code webui session launcher
     if [[ "$scope" == dev ]]; then
-        runtime="$DEV_RUNTIME_DIR"; code="$DEV_CODE_DIR"; webui="$DEV_WEBUI_PORT"; session="owv-testing"
+        runtime="$DEV_RUNTIME_DIR"; code="$DEV_CODE_DIR"; webui="$DEV_WEBUI_PORT"; session="owv-v2-testing"
     else
-        runtime="$PROD_RUNTIME_DIR"; code="$PROD_CODE_DIR"; webui="$PROD_WEBUI_PORT"; session="owv"
+        runtime="$PROD_RUNTIME_DIR"; code="$PROD_CODE_DIR"; webui="$PROD_WEBUI_PORT"; session="owv-v2"
     fi
 
     say ""

@@ -43,7 +43,7 @@ set -Eeuo pipefail
 # or a systemd unit re-execs into tmux, which then fails with 'terminal does not support
 # clear' and never reaches the dry-run path. Only wrap when a human is watching.
 if [[ -t 1 && -z "${TMUX:-}" && "${OWV_NO_TMUX:-0}" != "1" ]] && command -v tmux >/dev/null 2>&1; then
-    _owv_session="${OWV_TMUX_SESSION:-owv}"
+    _owv_session="${OWV_V2_TMUX_SESSION:-owv-v2}"
     _owv_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
     if tmux has-session -t "$_owv_session" 2>/dev/null; then
         printf '[OWV] session %s already running; attaching\n' "$_owv_session"
