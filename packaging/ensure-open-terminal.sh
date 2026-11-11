@@ -21,7 +21,7 @@ set -Euo pipefail
 # Every variable that can arrive unset from %post or from a plain shell gets an explicit default.
 # Under `set -u`, a bare test on an unset variable ends the script before it can report anything,
 # which is how the first version of this file exited 1 with no output on lp10.
-state_dir="${OWV_STATE_DIR:-/var/lib/openwebvibes}"
+state_dir="${OWV_STATE_DIR:-/var/lib/openwebvibes-v2}"
 autoinstall="${OWV_TERMINAL_AUTOINSTALL:-1}"
 log_file="${OWV_TERMINAL_INSTALL_LOG:-$state_dir/open-terminal-install.log}"
 
@@ -34,7 +34,7 @@ if [ "$(id -u)" -eq 0 ]; then
     runtime_python="$(command -v python3 || true)"
 else
     as_root=0
-    runtime_python="${OWV_PYTHON:-/usr/lib/openwebvibes/.venv/bin/python}"
+    runtime_python="${OWV_PYTHON:-/usr/lib/openwebvibes-v2/.venv/bin/python}"
     if [ ! -x "$runtime_python" ]; then
         runtime_python="$(command -v python3 || true)"
     fi

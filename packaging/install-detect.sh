@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Install-time detection: existing stack versus fresh machine. One workflow, two entry conditions,
 # so this reports what is present rather than deciding what to install. Written as JSON to
-# /var/lib/openwebvibes/install-report.json, and the Setup tab reads the same facts.
+# /var/lib/openwebvibes-v2/install-report.json, and the Setup tab reads the same facts.
 
 set -Euo pipefail
 
-state_dir="${OWV_STATE_DIR:-/var/lib/openwebvibes}"
+state_dir="${OWV_STATE_DIR:-/var/lib/openwebvibes-v2}"
 mkdir -p "$state_dir" 2>/dev/null || true
 
 find_bin() {

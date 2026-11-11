@@ -58,13 +58,13 @@ set -uo pipefail
 LAUNCHER_DIR="${OWV_LAUNCHER_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
 
 # --- scope resolution ---------------------------------------------------------------------
-PROD_RUNTIME_DIR="${OWV_RUNTIME_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/openwebvibes}"
+PROD_RUNTIME_DIR="${OWV_RUNTIME_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/openwebvibes-v2}"
 PROD_CODE_DIR="${OWV_CODE_DIR:-$HOME/Documents/AI_Output/Forks/vibe-ed}"
 PROD_WEBUI_PORT="${OWV_WEBUI_PORT:-8080}"
 PROD_ENGINE_PORT="${OWV_API_PORT:-8004}"
 PROD_TERMINAL_PORT="${OWV_TERMINAL_PORT:-8003}"
 
-DEV_RUNTIME_DIR="${OWV_DEV_RUNTIME_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/openwebvibes-dev}"
+DEV_RUNTIME_DIR="${OWV_DEV_RUNTIME_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/openwebvibes-v2-dev}"
 DEV_CODE_DIR="${OWV_DEV_CODE_DIR:-$HOME/Documents/AI_Output/Dev/vibe-ed-dev}"
 DEV_WEBUI_PORT="${OWV_DEV_WEBUI_PORT:-8090}"
 DEV_ENGINE_PORT="${OWV_DEV_API_PORT:-8005}"

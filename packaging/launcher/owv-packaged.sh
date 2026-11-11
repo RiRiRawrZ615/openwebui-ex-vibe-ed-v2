@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Packaged entry point. Resolves its own location so the launcher works from
-# /usr/lib/openwebvibes as well as from a git checkout.
+# /usr/lib/openwebvibes as well as from a git checkout (v2: own name-space).
 #
-# Config search order is /etc/openwebvibes/owv.conf then ~/.config/openwebvibes/owv.conf, with the
+# Config search order is /etc/openwebvibes-v2/owv.conf then ~/.config/openwebvibes-v2/owv.conf, with the
 # user file winning when it exists. The launcher reads config as data, never evals it, so nothing
 # here executes the contents of a config file.
 
@@ -15,12 +15,12 @@ APP_ROOT="$(dirname "$LAUNCHER_DIR")"
 export OWV_FORK_DIR="${OWV_FORK_DIR:-$APP_ROOT}"
 export OWV_PACKAGED=1
 
-user_conf="${XDG_CONFIG_HOME:-$HOME/.config}/openwebvibes/owv.conf"
+user_conf="${XDG_CONFIG_HOME:-$HOME/.config}/openwebvibes-v2/owv.conf"
 if [ -z "${OWV_CONFIG_FILE:-}" ]; then
     if [ -f "$user_conf" ]; then
         export OWV_CONFIG_FILE="$user_conf"
-    elif [ -f /etc/openwebvibes/owv.conf ]; then
-        export OWV_CONFIG_FILE=/etc/openwebvibes/owv.conf
+    elif [ -f /etc/openwebvibes-v2/owv.conf ]; then
+        export OWV_CONFIG_FILE=/etc/openwebvibes-v2/owv.conf
     fi
 fi
 

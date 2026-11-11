@@ -61,7 +61,7 @@ fi
 # Parsed line by line, never eval'd. Only OWV_ names plus EX_MODEL_ROOTS are accepted so a
 # settings file cannot change how the shell resolves binaries. An env var already set in the
 # calling shell wins over the file.
-OWV_CONFIG_FILE="${OWV_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/openwebvibes/owv.conf}"
+OWV_CONFIG_FILE="${OWV_CONFIG_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/openwebvibes-v2/owv.conf}"
 if [[ -f "$OWV_CONFIG_FILE" ]]; then
     while IFS= read -r line || [[ -n "$line" ]]; do
         line="${line%%$'\r'}"
@@ -80,7 +80,7 @@ fi
 # Portable defaults, all overridable
 # -----------------------------
 OWV_HOME="${OWV_HOME:-$HOME}"
-FORK_DIR="${OWV_FORK_DIR:-$OWV_HOME/Documents/AI_Output/Forks/vibe-ed}"
+FORK_DIR="${OWV_FORK_DIR:-$OWV_HOME/Documents/AI_Output/Forks/vibe-ed-v2/base}"
 FORK_BACKEND="$FORK_DIR/backend"
 
 # Fork venv is the only python that can import the fork. System python3 and the uv cache envs
@@ -98,10 +98,10 @@ FORK_PY="${OWV_PYTHON:-${FORK_DIR}/.venv/bin/python}"
 # that is only a shell variable is invisible to the python process, and env.py falls back to
 # BACKEND_DIR/data, which on a packaged install is /usr/lib/openwebvibes/backend/data and holds
 # nothing but readme.txt.
-DATA_DIR="${OWV_DATA_DIR:-${XDG_DATA_HOME:-$OWV_HOME/.local/share}/openwebvibes}"
+DATA_DIR="${OWV_DATA_DIR:-${XDG_DATA_HOME:-$OWV_HOME/.local/share}/openwebvibes-v2}"
 export DATA_DIR
-RUNTIME_DIR="${OWV_RUNTIME_DIR:-${XDG_CACHE_HOME:-$OWV_HOME/.cache}/openwebvibes}"
-LOG_DIR="${OWV_LOG_DIR:-${XDG_STATE_HOME:-$OWV_HOME/.local/state}/openwebvibes}"
+RUNTIME_DIR="${OWV_RUNTIME_DIR:-${XDG_CACHE_HOME:-$OWV_HOME/.cache}/openwebvibes-v2}"
+LOG_DIR="${OWV_LOG_DIR:-${XDG_STATE_HOME:-$OWV_HOME/.local/state}/openwebvibes-v2}"
 
 MODEL_ROOT="${OWV_MODEL_ROOT:-$OWV_HOME/Documents/AI_Models}"
 MODEL_PATH="${OWV_MODEL:-}"
@@ -118,10 +118,10 @@ PROFILES_DIR="${OWV_PROFILES_DIR:-$OWV_HOME/Documents/llama_profiles}"
 # Ports identical to the working launchers, so bookmarks and workflows do not change.
 # The fork replaces the live launcher, so it takes these same ports. It refuses if one is
 # already serving something else, which is how it avoids hijacking a running instance.
-WEBUI_PORT="${OWV_WEBUI_PORT:-8080}"
-API_PORT="${OWV_API_PORT:-8004}"
-VISION_PORT="${OWV_VISION_PORT:-8002}"
-OPEN_TERMINAL_PORT="${OWV_TERMINAL_PORT:-8003}"
+WEBUI_PORT="${OWV_WEBUI_PORT:-8085}"
+API_PORT="${OWV_API_PORT:-8005}"
+VISION_PORT="${OWV_VISION_PORT:-8007}"
+OPEN_TERMINAL_PORT="${OWV_TERMINAL_PORT:-8006}"
 
 # Strata. Same shape as strata_openwebui_launcher.sh.
 STRATA_DIR="${OWV_STRATA_DIR:-$OWV_HOME/strata}"
@@ -146,6 +146,39 @@ WEBUI_AUTH="${WEBUI_AUTH:-False}"
 # non-OWV keys, which it does not.
 WEBUI_SECRET_KEY="${WEBUI_SECRET_KEY:-fixed_secret_llamacpp_safe_v4}"
 OPENAI_API_BASE_URL="${OPENAI_API_BASE_URL:-http://127.0.0.1:${API_PORT}/v1}"
+
+# -----------------------------
+# Optional context proxy (billion-context), off by default
+# -----------------------------
+# v2 keeps context management out of the app. The engine is reached through an OpenAI-compatible
+# URL, so a proxy can sit in front of it without touching the backend. Off by default: a plain run
+# is byte-for-byte the old behavior. With OWV_CONTEXT_PROXY=1 the Open WebUI base URL points at the
+# proxy instead, and the proxy forwards to the engine. Per-machine config is env only.
+OWV_CONTEXT_PROXY="${OWV_CONTEXT_PROXY:-0}"
+BILI_PORT="${BILI_PORT:-8787}"
+PROXY_BIN="${BILI_BIN:-bili}"
+command -v "$PROXY_BIN" >/dev/null 2>&1 || PROXY_BIN=billion-context
+OWV_UPSTREAM_URL="${OWV_UPSTREAM_URL:-http://127.0.0.1:${API_PORT}/v1}"
+OWV_PROXY_URL="${OWV_PROXY_URL:-http://127.0.0.1:${BILI_PORT}/v1}"
+BILI_MAX_CONTEXT="${BILI_MAX_CONTEXT:-40000}"
+BILI_MAX_COMPLETION="${BILI_MAX_COMPLETION:-8192}"
+BILI_TTL="${BILI_TTL:-3600}"
+
+if [ "$OWV_CONTEXT_PROXY" = "1" ]; then
+    if command -v "$PROXY_BIN" >/dev/null 2>&1; then
+        # Usage numbers for the stats row must survive the proxy rewrite. If the proxy strips
+        # usage, the client-side estimate in exStreamSmoother is the fallback source.
+        setsid "$PROXY_BIN" --provider openai --host 127.0.0.1 --port "$BILI_PORT" \
+            --ttl "$BILI_TTL" --session-id "${EX_SESSION_ID:-vibes-v2}" \
+            --max_context_window "$BILI_MAX_CONTEXT" \
+            --max_completion_tokens "$BILI_MAX_COMPLETION" >> "$LOG_DIR/proxy.log" 2>&1 &
+        PROXY_PID=$!
+        OPENAI_API_BASE_URL="$OWV_PROXY_URL"
+        log "proxy: $OPENAI_API_BASE_URL -> $OWV_UPSTREAM_URL (pid $PROXY_PID)"
+    else
+        warn "proxy requested but $PROXY_BIN is not installed; running direct. Install: npm i -g billion-context"
+    fi
+fi
 
 # Offline-first. A cached copy is used whenever it exists; the network is only consulted when
 # there is no local copy at all. This is the fix for the outage failure.
@@ -201,7 +234,7 @@ fi
 # LOG_DIR as a secondary so nothing is lost when the two launchers overwrite each other.
 STOCK_WEBUI_LOG="${OWV_STOCK_LOG:-$OWV_HOME/Documents/openwebui.log}"
 WEBUI_LOG="$STOCK_WEBUI_LOG"
-WEBUI_LOG_SECONDARY="$LOG_DIR/openwebvibes.log"
+WEBUI_LOG_SECONDARY="$LOG_DIR/openwebvibes-v2.log"
 BACKEND_LOG="$LOG_DIR/backend.log"
 TERMINAL_LOG="$LOG_DIR/open-terminal.log"
 
@@ -483,17 +516,18 @@ PYARGS
 # -----------------------------
 fork_backend_decision() {
     local model="$1" prefer="$2"
-    local mod="$FORK_BACKEND/open_webui/utils/ex_backend.py"
-    [[ -x "$FORK_PY" && -f "$mod" ]] || return 1
-    "$FORK_PY" - "$mod" "$model" "$prefer" <<'PYFORK'
-import importlib.util, json, sys
-
-path, model, prefer = sys.argv[1], sys.argv[2], sys.argv[3]
-spec = importlib.util.spec_from_file_location("ex_backend", path)
-mod = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mod)
-print(json.dumps(mod.auto_select(model, prefer=prefer or "auto")))
-PYFORK
+    # v2 dropped the gate. There is no ex_backend module to consult, so the decision is env-driven:
+    # an explicit OWV_BACKEND wins, otherwise strata is chosen only when its config or binary is
+    # present, otherwise llama.cpp. Refusing to guess is better than importing a module that is gone.
+    if [ -n "$prefer" ] && [ "$prefer" != "auto" ]; then
+        printf '%s\n' "{"selected":"$prefer","reason":"explicit OWV_BACKEND"}"
+        return 0
+    fi
+    if [ -f "$STRATA_CONFIG" ] || command -v strata >/dev/null 2>&1; then
+        printf '%s\n' '{"selected":"strata","reason":"strata config or binary present"}'
+    else
+        printf '%s\n' '{"selected":"llama","reason":"no strata config; default engine"}'
+    fi
 }
 
 # Params the launcher actually passes. The settings tab reports these as launcher-locked, so this
@@ -566,25 +600,23 @@ PYPARAMS
 write_handshake() {
     local backend="$1" model="$2" params_json="${3:-}"
     [[ -z "$params_json" ]] && params_json="{}"
-    local mod="$FORK_BACKEND/open_webui/utils/ex_handshake.py"
-    if [[ ! -x "$FORK_PY" || ! -f "$mod" ]]; then
-        warn "fork handshake module not available; the settings tab will report no handshake"
-        return 1
-    fi
-    "$FORK_PY" - "$mod" "$DATA_DIR" "$backend" "$model" "$params_json" <<'PYHS'
-import importlib.util, json, sys
-
-mod_path, data_dir, backend, model, params = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
-spec = importlib.util.spec_from_file_location("ex_handshake", mod_path)
-mod = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(mod)
+    # v2 has no ex_handshake module. The settings tab reads the same record from the data dir, so
+    # write it directly instead of importing a module that the clean rebuild dropped.
+    local out="$DATA_DIR/ex_runtime.json"
+    python3 - "$out" "$backend" "$model" "$params_json" <<'PYHS'
+import json, sys, time
+out, backend, model, params = sys.argv[1:5]
 record = {
-    "source": mod.HANDSHAKE_SOURCE,
+    "source": "launcher",
     "backend": backend,
     "model": model,
     "params": json.loads(params) if params else {},
+    "written_at": int(time.time()),
+    "fork": "vibes-v2",
 }
-print(mod.write_handshake(data_dir, record))
+with open(out, "w", encoding="utf-8") as f:
+    f.write(json.dumps(record, sort_keys=True))
+print(out)
 PYHS
 }
 

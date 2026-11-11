@@ -1,0 +1,17 @@
+[Unit]
+Description=Open Web Vibes v2 (visual layer on clean Open WebUI, optional billion-context proxy)
+After=network-online.target
+
+[Service]
+Type=simple
+# The launcher re-execs inside tmux, so the service supervises the outer process and tmux keeps the
+# session. Running the launcher directly from a shell is the other supported path; the package does
+# not run the fork as root.
+# This unit is v2-only. It does not replace openwebvibes.service; a machine carrying both packages
+# can run both, on separate ports (v1 8080, v2 8085).
+ExecStart=/usr/lib/openwebvibes-v2/launcher/owv-packaged.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

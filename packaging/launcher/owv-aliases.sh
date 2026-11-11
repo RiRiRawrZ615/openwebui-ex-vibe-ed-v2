@@ -17,28 +17,28 @@ OWV_LAUNCHER_DIR="${OWV_LAUNCHER_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && p
 shopt -s expand_aliases
 
 # start
-alias launch-owv="bash $OWV_LAUNCHER_DIR/owv.sh"
-alias owv="bash $OWV_LAUNCHER_DIR/owv.sh"
-alias owv-tmux="tmux new-session -d -s owv \"bash $OWV_LAUNCHER_DIR/owv.sh\""
+alias launch-owv-v2="bash $OWV_LAUNCHER_DIR/owv.sh"
+alias owv-v2="bash $OWV_LAUNCHER_DIR/owv.sh"
+alias owv-v2-tmux="tmux new-session -d -s owv \"bash $OWV_LAUNCHER_DIR/owv.sh\""
 
 # stop
-alias kill-owv="bash $OWV_LAUNCHER_DIR/owv-kill.sh"
+alias kill-owv-v2="bash $OWV_LAUNCHER_DIR/owv-kill.sh"
 # A second name for the same thing, because kill-owv can already be defined by the user's shell rc.
 # profile.d runs before .bashrc for a login shell and does not run at all for a non-login
 # interactive shell, so a packaged definition cannot be relied on to win. Measured on two machines
 # where kill-owv still resolved to a stock launcher script. owv-kill is not a name anything else
 # defines, so it is unambiguous.
-alias owv-kill="bash $OWV_LAUNCHER_DIR/owv-kill.sh"
-alias kill-owv-dirty="bash $OWV_LAUNCHER_DIR/owv-kill.sh --force"
-alias kill-owv-ui="bash $OWV_LAUNCHER_DIR/owv-kill.sh --ui-only"
-alias restart-owv="bash $OWV_LAUNCHER_DIR/owv-kill.sh && bash $OWV_LAUNCHER_DIR/owv.sh"
+alias owv-v2-kill="bash $OWV_LAUNCHER_DIR/owv-kill.sh"
+alias kill-owv-v2-dirty="bash $OWV_LAUNCHER_DIR/owv-kill.sh --force"
+alias kill-owv-v2-ui="bash $OWV_LAUNCHER_DIR/owv-kill.sh --ui-only"
+alias restart-owv-v2="bash $OWV_LAUNCHER_DIR/owv-kill.sh && bash $OWV_LAUNCHER_DIR/owv.sh"
 
 # look
-alias owv-status="bash $OWV_LAUNCHER_DIR/owv-status.sh"
+alias owv-v2-status="bash $OWV_LAUNCHER_DIR/owv-status.sh"
 
 # watch. log-oui renamed to log-owv, and the tails now point at the sinks this launcher actually
 # writes. The stock alias named three files and this launcher only ever fed one of them, so two
 # thirds of it showed stale content from days ago.
-alias log-owv='state="${XDG_STATE_HOME:-$HOME/.local/state}/openwebvibes"; tail -F "$HOME/Documents/openwebui.log" "$HOME/Documents/engine.log" "$HOME/Documents/llama.log" "$state/openwebvibes.log" "$state/backend.log" 2>/dev/null'
-alias tail-eng='state="${XDG_STATE_HOME:-$HOME/.local/state}/openwebvibes"; tail -F "$HOME/Documents/engine.log" "$HOME/Documents/llama.log" "$state/backend.log" "$state/open-terminal.log" 2>/dev/null'
-alias tail-owv='state="${XDG_STATE_HOME:-$HOME/.local/state}/openwebvibes"; tail -F "$state/openwebvibes.log" "$state/backend.log" "$state/open-terminal.log" 2>/dev/null'
+alias log-owv='state="${XDG_STATE_HOME:-$HOME/.local/state}/openwebvibes-v2"; tail -F "$HOME/Documents/openwebui.log" "$HOME/Documents/engine.log" "$HOME/Documents/llama.log" "$state/openwebvibes.log" "$state/backend.log" 2>/dev/null'
+alias tail-eng='state="${XDG_STATE_HOME:-$HOME/.local/state}/openwebvibes-v2"; tail -F "$HOME/Documents/engine.log" "$HOME/Documents/llama.log" "$state/backend.log" "$state/open-terminal.log" 2>/dev/null'
+alias tail-owv='state="${XDG_STATE_HOME:-$HOME/.local/state}/openwebvibes-v2"; tail -F "$state/openwebvibes.log" "$state/backend.log" "$state/open-terminal.log" 2>/dev/null'

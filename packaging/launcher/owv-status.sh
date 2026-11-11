@@ -18,8 +18,8 @@ if [[ -n "${OWV_DATA_DIR:-}" ]]; then
 elif [[ -n "$_LIVE_DD" && -f "$_LIVE_DD/webui.db" ]]; then
     DB="$_LIVE_DD/webui.db"
 else
-    DB="/var/lib/openwebvibes/webui.db"
-    [[ -f "$DB" ]] || DB="$HOME/.local/share/openwebvibes/webui.db"
+    DB="/var/lib/openwebvibes-v2/webui.db"
+    [[ -f "$DB" ]] || DB="$HOME/.local/share/openwebvibes-v2/webui.db"
 fi
 WEBUI_PORT="${OWV_WEBUI_PORT:-8080}"
 API_PORT="${OWV_API_PORT:-8004}"
